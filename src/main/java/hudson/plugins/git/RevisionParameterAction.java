@@ -55,6 +55,11 @@ public class RevisionParameterAction extends InvisibleAction implements Serializ
     public final boolean combineCommits;
     public final Revision revision;
     private final URIish repoURL;
+
+    public String getBranchName() {
+        return branchName;
+    }
+
     private final String branchName;
 
     public RevisionParameterAction(String commit) {

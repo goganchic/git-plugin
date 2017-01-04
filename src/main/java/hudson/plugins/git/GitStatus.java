@@ -6,6 +6,7 @@ import hudson.Extension;
 import hudson.ExtensionPoint;
 import hudson.Util;
 import hudson.model.*;
+import hudson.model.Queue;
 import hudson.plugins.git.extensions.impl.IgnoreNotifyCommit;
 import hudson.scm.SCM;
 import hudson.security.ACL;
@@ -21,6 +22,8 @@ import javax.servlet.http.HttpServletRequest;
 
 import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import static javax.servlet.http.HttpServletResponse.SC_OK;
+
+import hudson.util.RunList;
 import jenkins.model.Jenkins;
 import jenkins.triggers.SCMTriggerItem;
 import org.acegisecurity.context.SecurityContext;
@@ -398,6 +401,7 @@ public class GitStatus extends AbstractModelObject implements UnprotectedRootAct
                                      * NOTE: This is SCHEDULING THE BUILD, not triggering polling of the repo.
                                      * If no SHA1 or the branch spec is parameterized, it will only poll.
                                      */
+                                    cancelOutdatedBuilds((AbstractProject) project, branchName);
                                     LOGGER.info("Scheduling " + project.getFullDisplayName() + " to build commit " + sha1);
                                     scmTriggerItem.scheduleBuild2(scmTriggerItem.getQuietPeriod(),
                                             new CauseAction(new CommitHookCause(sha1)),
@@ -461,6 +465,66 @@ public class GitStatus extends AbstractModelObject implements UnprotectedRootAct
             }
 
             return defValues;
+        }
+
+
+        private void cancelOutdatedBuilds(AbstractProject<?, ?> project, String branchName) {
+            if (!project.isBuilding() && !project.isInQueue()) {
+                LOGGER.info("Nothing to cancel");
+                return;
+            }
+
+            boolean branchFound;
+
+            LOGGER.info("New build scheduled for " + project.getName() + " on branch " + branchName + ", checking for queued items to cancel.");
+            Queue queue = Jenkins.getInstance().getQueue();
+            for (Queue.Item item : queue.getItems(project)) {
+
+                branchFound = false;
+                for (RevisionParameterAction action : item.getActions(RevisionParameterAction.class)) {
+                    if (action.getBranchName().equals(branchName)) {
+                        branchFound = true;
+                        break;
+                    }
+                }
+
+                if (!branchFound) {
+                    continue;
+                }
+
+                try {
+                    LOGGER.info("Cancelling queued build of " + project.getName() + " for branch " + branchName);
+                    queue.cancel(item);
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Unable to cancel queued build", e);
+                }
+            }
+
+            RunList<?> runs = project.getBuilds();
+            for (Run<?, ?> run : runs) {
+                if (!run.isBuilding() && !run.hasntStartedYet()) {
+                    break;
+                }
+
+                branchFound = false;
+                for (RevisionParameterAction action : run.getActions(RevisionParameterAction.class)) {
+                    if (action.getBranchName().equals(branchName)) {
+                        branchFound = true;
+                        break;
+                    }
+                }
+
+                if (!branchFound) {
+                    continue;
+                }
+
+                try {
+                    LOGGER.info("Cancelling running build #" + run.getNumber() + " of " + project.getName() + " for branch " + branchName);
+                    run.getExecutor().interrupt(Result.ABORTED);
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Error while trying to interrupt build!", e);
+                }
+            }
         }
 
         /**
