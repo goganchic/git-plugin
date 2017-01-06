@@ -397,11 +397,13 @@ public class GitStatus extends AbstractModelObject implements UnprotectedRootAct
                                     }
                                 }
                                 if (!parametrizedBranchSpec && isNotEmpty(sha1)) {
+                                    if (git.getCancelOutdatedBuilds()) {
+                                        cancelOutdatedBuilds((AbstractProject) project, branchName);
+                                    }
                                     /* If SHA1 and not a parameterized branch spec, then schedule build.
                                      * NOTE: This is SCHEDULING THE BUILD, not triggering polling of the repo.
                                      * If no SHA1 or the branch spec is parameterized, it will only poll.
                                      */
-                                    cancelOutdatedBuilds((AbstractProject) project, branchName);
                                     LOGGER.info("Scheduling " + project.getFullDisplayName() + " to build commit " + sha1);
                                     scmTriggerItem.scheduleBuild2(scmTriggerItem.getQuietPeriod(),
                                             new CauseAction(new CommitHookCause(sha1)),

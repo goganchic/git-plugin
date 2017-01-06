@@ -131,6 +131,8 @@ public class GitSCM extends GitSCMBackwardCompatibility {
      */
     private DescribableList<GitSCMExtension,GitSCMExtensionDescriptor> extensions;
 
+    private final Boolean cancelOutdatedBuilds;
+
     public Collection<SubmoduleConfig> getSubmoduleCfg() {
         return submoduleCfg;
     }
@@ -160,7 +162,6 @@ public class GitSCM extends GitSCMBackwardCompatibility {
     }
 
 //    @Restricted(NoExternalUse.class) // because this keeps changing
-    @DataBoundConstructor
     public GitSCM(
             List<UserRemoteConfig> userRemoteConfigs,
             List<BranchSpec> branches,
@@ -169,6 +170,19 @@ public class GitSCM extends GitSCMBackwardCompatibility {
             @CheckForNull GitRepositoryBrowser browser,
             @CheckForNull String gitTool,
             List<GitSCMExtension> extensions) {
+        this(userRemoteConfigs, branches, doGenerateSubmoduleConfigurations, submoduleCfg, browser, gitTool, extensions, false);
+    }
+
+    @DataBoundConstructor
+    public GitSCM(
+            List<UserRemoteConfig> userRemoteConfigs,
+            List<BranchSpec> branches,
+            Boolean doGenerateSubmoduleConfigurations,
+            Collection<SubmoduleConfig> submoduleCfg,
+            @CheckForNull GitRepositoryBrowser browser,
+            @CheckForNull String gitTool,
+            List<GitSCMExtension> extensions,
+            Boolean cancelOutdatedBuilds) {
 
         // moved from createBranches
         this.branches = isEmpty(branches) ? newArrayList(new BranchSpec("*/master")) : branches;
@@ -197,6 +211,8 @@ public class GitSCM extends GitSCMBackwardCompatibility {
         this.extensions = new DescribableList<>(Saveable.NOOP,Util.fixNull(extensions));
 
         getBuildChooser(); // set the gitSCM field.
+
+        this.cancelOutdatedBuilds = cancelOutdatedBuilds;
     }
 
     /**
@@ -1612,6 +1628,9 @@ public class GitSCM extends GitSCMBackwardCompatibility {
         }
         return false;
     }
+
+    @Exported
+    public Boolean getCancelOutdatedBuilds() { return cancelOutdatedBuilds != null && cancelOutdatedBuilds; }
 
     /**
      * @deprecated

@@ -22,4 +22,8 @@
         <f:hetero-list name="extensions" items="${instance.extensions}" descriptors="${descriptor.getExtensionDescriptors()}"
                        hasHeader="true" />
     </f:entry>
+
+    <f:entry title="Cancel outdated builds" field="cancelOutdatedBuilds">
+        <f:checkbox />
+    </f:entry>
 </j:jelly>
