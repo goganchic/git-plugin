@@ -1,10 +1,7 @@
 package hudson.plugins.git;
 
-import hudson.model.Cause;
-import hudson.model.FreeStyleBuild;
-import hudson.model.FreeStyleProject;
-import hudson.model.ParametersDefinitionProperty;
-import hudson.model.StringParameterDefinition;
+import hudson.model.*;
+import hudson.model.queue.QueueTaskFuture;
 import hudson.plugins.git.extensions.GitSCMExtension;
 import hudson.tasks.BatchFile;
 import hudson.tasks.CommandInterpreter;
@@ -14,6 +11,7 @@ import java.io.File;
 import java.net.URISyntaxException;
 import java.util.*;
 
+import jenkins.model.Jenkins;
 import org.eclipse.jgit.transport.URIish;
 import org.mockito.Mockito;
 import static org.mockito.Mockito.mock;
@@ -345,6 +343,10 @@ public class GitStatusTest extends AbstractGitProject {
     }
 
     private FreeStyleProject setupNotifyProject() throws Exception {
+        return setupNotifyProject(false);
+    }
+
+    private FreeStyleProject setupNotifyProject(Boolean cancelOutdatedBuilds) throws Exception {
         FreeStyleProject project = jenkins.createFreeStyleProject();
         project.setQuietPeriod(0);
         GitSCM git = new GitSCM(
@@ -352,7 +354,8 @@ public class GitStatusTest extends AbstractGitProject {
                 Collections.singletonList(new BranchSpec(branch)),
                 false, Collections.<SubmoduleConfig>emptyList(),
                 null, null,
-                Collections.<GitSCMExtension>emptyList());
+                Collections.<GitSCMExtension>emptyList(),
+                cancelOutdatedBuilds);
         project.setScm(git);
         project.addTrigger(new SCMTrigger("")); // Required for GitStatus to see polling request
         return project;
@@ -515,5 +518,52 @@ public class GitStatusTest extends AbstractGitProject {
      */
     private boolean isWindows() {
         return File.pathSeparatorChar == ';';
+    }
+
+    @Test
+    public void testCancellingPlannedBuild() throws Exception {
+        FreeStyleProject project = setupNotifyProject(true);
+        this.gitStatus.doNotifyCommit(requestWithParameter, repoURL, "master", "aaa");
+        this.gitStatus.doNotifyCommit(requestWithParameter, repoURL, "master", "bbb");
+        assertEquals(1, Jenkins.getInstance().getQueue().getItems(project).size());
+    }
+
+    @Test
+    public void testNotCancellingPlannedBuild() throws Exception {
+        FreeStyleProject project = setupNotifyProject(false);
+        this.gitStatus.doNotifyCommit(requestWithParameter, repoURL, "master", "aaa");
+        this.gitStatus.doNotifyCommit(requestWithParameter, repoURL, "master", "bbb");
+        assertEquals(2, Jenkins.getInstance().getQueue().getItems(project).size());
+    }
+
+    @Test
+    public void testCancellingRunningBuild() throws Exception {
+        FreeStyleProject project = setupNotifyProject(true);
+
+        QueueTaskFuture<FreeStyleBuild> buildFuture = startBuild(project);
+        buildFuture.waitForStart();
+        this.gitStatus.doNotifyCommit(requestWithParameter, repoURL, "master", "aaa");
+        assertEquals("aborted", buildFuture.get().getBuildStatusSummary().message);
+    }
+
+    @Test
+    public void testNotCancellingRunningBuild() throws Exception {
+        FreeStyleProject project = setupNotifyProject(false);
+
+        QueueTaskFuture<FreeStyleBuild> buildFuture = startBuild(project);
+        buildFuture.waitForStart();
+        this.gitStatus.doNotifyCommit(requestWithParameter, repoURL, "master", "aaa");
+        assertEquals("stable", buildFuture.get().getBuildStatusSummary().message);
+    }
+
+    private QueueTaskFuture<FreeStyleBuild> startBuild(FreeStyleProject project) throws Exception {
+        final CommandInterpreter script = isWindows()
+                ? new BatchFile("sleep 1")
+                : new Shell("sleep 1");
+        project.getBuildersList().add(script);
+        return project.scheduleBuild2(0,
+                new Cause.UserCause(),
+                new RevisionParameterAction(sha1, new URIish(repoURL), "master")
+        );
     }
 }
